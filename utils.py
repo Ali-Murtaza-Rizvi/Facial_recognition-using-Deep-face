@@ -3,46 +3,68 @@ import pickle
 import numpy as np
 from deepface import DeepFace
 
-MODEL_NAME = "Facenet"
-THRESHOLD = 0.6   # Recommended for Facenet
-FRAME_SKIP = 5    # Process 1 frame out of every 5 (~6 fps if video is 30fps)
-FRAME_SIZE = (320, 240)  # Resize frames before embedding
+MODEL_NAME = "Facenet"   # You can try "Facenet512" for stronger embeddings
+THRESHOLD = 0.55         # Adjust after testing
+
+# -------------------- Helpers --------------------
 
 def load_embeddings(path="embeddings.pkl"):
     with open(path, "rb") as f:
         return pickle.load(f)
 
-def cosine_similarity(vec1, vec2):
-    vec1, vec2 = np.array(vec1), np.array(vec2)
-    return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
+def normalize(vec):
+    """L2 normalize an embedding vector"""
+    vec = np.array(vec)
+    return vec / np.linalg.norm(vec)
 
-def recognize_face_embedding(query_vec, embeddings):
-    best_match, best_score = "Unknown", -1
-    for name, vecs in embeddings.items():
-        for ref_vec in vecs:
-            score = cosine_similarity(query_vec, ref_vec)
-            if score > best_score:
-                best_score, best_match = score, name
-    return best_match if best_score >= THRESHOLD else "Unknown"
+def cosine_similarity(vec1, vec2):
+    """Cosine similarity between two vectors"""
+    vec1, vec2 = normalize(vec1), normalize(vec2)
+    return np.dot(vec1, vec2)
+
+# -------------------- Recognition --------------------
+
+def recognize_face(face_img, embeddings):
+    try:
+        reps = DeepFace.represent(
+            img_path=face_img,
+            model_name=MODEL_NAME,
+            enforce_detection=False
+        )
+        if not reps or not isinstance(reps, list):
+            return "Unknown"
+
+        query_vec = reps[0]["embedding"]
+        query_vec = normalize(query_vec)
+
+        best_match, best_score = "Unknown", -1
+
+        for name, vecs in embeddings.items():
+            for ref_vec in vecs:
+                ref_vec = normalize(ref_vec)
+                score = cosine_similarity(query_vec, ref_vec)
+                print(f"[DEBUG] Comparing with {name}: {score:.3f}")
+                if score > best_score:
+                    best_score, best_match = score, name
+
+        print(f"[DEBUG] Best match: {best_match} ({best_score:.3f})")
+        return best_match if best_score >= THRESHOLD else "Unknown"
+
+    except Exception as e:
+        print(f"[ERROR] Face recognition failed: {e}")
+        return "Unknown"
+
+# -------------------- Video Processing --------------------
 
 def process_video(video_path, embeddings):
     cap = cv2.VideoCapture(video_path)
     recognized = set()
-    frame_count = 0
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
-        # Skip frames
-        if frame_count % FRAME_SKIP != 0:
-            frame_count += 1
-            continue
-        frame_count += 1
-
-        # Resize for speed
-        frame = cv2.resize(frame, FRAME_SIZE)
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         try:
@@ -52,8 +74,7 @@ def process_video(video_path, embeddings):
                 enforce_detection=False
             )
             if reps and isinstance(reps, list):
-                query_vec = reps[0]["embedding"]
-                name = recognize_face_embedding(query_vec, embeddings)
+                name = recognize_face(rgb_frame, embeddings)
                 if name != "Unknown":
                     recognized.add(name)
         except Exception:

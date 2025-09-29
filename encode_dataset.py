@@ -1,12 +1,10 @@
 import os
 import pickle
-import cv2
 from deepface import DeepFace
 
 DATASET_DIR = "dataset"       # folder with student images
 EMBEDDINGS_PATH = "embeddings.pkl"
-MODEL_NAME = "Facenet"        # using Facenet for better accuracy
-FRAME_SIZE = (320, 240)       # Resize all images before encoding
+MODEL_NAME = "Facenet"        # MUST match utils.py
 
 def encode_dataset():
     embeddings = {}
@@ -22,16 +20,8 @@ def encode_dataset():
         for img_file in os.listdir(student_dir):
             img_path = os.path.join(student_dir, img_file)
             try:
-                # Load + resize image for consistency
-                img = cv2.imread(img_path)
-                if img is None:
-                    print(f"[WARNING] Could not read {img_path}")
-                    continue
-                img = cv2.resize(img, FRAME_SIZE)
-                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
                 reps = DeepFace.represent(
-                    img_path=img_rgb,
+                    img_path=img_path,
                     model_name=MODEL_NAME,
                     enforce_detection=False
                 )
@@ -40,7 +30,6 @@ def encode_dataset():
             except Exception as e:
                 print(f"[WARNING] Failed on {img_path}: {e}")
 
-    # Save all embeddings
     with open(EMBEDDINGS_PATH, "wb") as f:
         pickle.dump(embeddings, f)
 
